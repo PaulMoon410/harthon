@@ -1,0 +1,17 @@
+databases:
+  - name: myapp-db
+    databaseName: myapp
+    plan: free
+
+services:
+  - type: web
+    name: python-render-app
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+    plan: free
+    region: oregon
+    branch: main
