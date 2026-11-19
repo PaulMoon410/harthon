@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Python Console</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; max-width: 900px; margin: auto; padding: 1rem; }
+    input, textarea, button { font: inherit; padding: .5rem; box-sizing: border-box; }
+    input, textarea { width: 100%; background: #222; color: #eee; border: 1px solid #777; }
+    textarea { min-height: 10rem; margin-top: 1rem; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #222; padding: 1rem; min-height: 5rem; }
+    button { margin: .5rem .5rem .5rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Python Console</h1>
+  <p>Only use trusted code. Sessions are temporary and can access this service's files and environment.</p>
+  <label for="key">API key</label>
+  <input id="key" type="password" autocomplete="off">
+  <button id="connect">Start session</button><button id="close" disabled>Close session</button>
+  <p id="status" role="status">Not connected</p>
+  <label for="code">Python code</label>
+  <textarea id="code" spellcheck="false"></textarea>
+  <button id="run" disabled>Run</button>
+  <pre id="output" aria-live="polite"></pre>
+  <script>
+    const key = document.getElementById('key');
+    const status = document.getElementById('status');
+    const output = document.getElementById('output');
+    const code = document.getElementById('code');
+    const connect = document.getElementById('connect');
+    const close = document.getElementById('close');
+    const run = document.getElementById('run');
+    let session = null;
+    let sessionKey = null;
+    let busy = false;
+    function update() {
+      connect.disabled = busy || !!session;
+      key.disabled = busy || !!session;
+      close.disabled = busy || !session;
+      run.disabled = busy || !session;
+    }
+    async function api(path, method, body, apiKey) {
+      const options = {method, headers: {'Authorization': 'Bearer ' + apiKey}};
+      if (body !== undefined) {
+        options.headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(body);
+      }
+      const response = await fetch(path, options);
+      if (response.status === 204) return null;
+      const data = await response.json();
+      if (!response.ok) {
+        const error = new Error(data.error || 'Request failed: ' + response.status);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    }
+    connect.onclick = async () => {
+      busy = true; update();
+      try {
+        const apiKey = key.value;
+        const data = await api('/api/sessions', 'POST', undefined, apiKey);
+        session = data.session_id;
+        sessionKey = apiKey;
+        key.value = '';
+        status.textContent = 'Session connected';
+      } catch (error) { status.textContent = error.message; }
+      finally { busy = false; update(); }
+    };
+    run.onclick = async () => {
+      busy = true; update();
+      try {
+        const data = await api('/api/sessions/' + session + '/execute', 'POST', {code: code.value}, sessionKey);
+        output.textContent += '>>> ' + code.value + '\n' + data.output + '\n';
+        status.textContent = data.ok ? 'Command complete' : 'Python error; see output';
+      } catch (error) {
+        status.textContent = error.message;
+        if ([404, 502, 504].includes(error.status)) { session = null; sessionKey = null; }
+      }
+      finally { busy = false; update(); }
+    };
+    close.onclick = async () => {
+      busy = true; update();
+      try {
+        await api('/api/sessions/' + session, 'DELETE', undefined, sessionKey);
+        session = null; sessionKey = null;
+        status.textContent = 'Session closed';
+      } catch (error) {
+        status.textContent = error.message;
+        if (error.status === 404) { session = null; sessionKey = null; }
+      }
+      finally { busy = false; update(); }
+    };
+  </script>
+</body>
+</html>
